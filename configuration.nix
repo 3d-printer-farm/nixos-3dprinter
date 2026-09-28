@@ -97,6 +97,7 @@
   #   wget
       git
       gh
+      claude-code
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
