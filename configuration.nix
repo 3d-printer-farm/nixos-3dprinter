@@ -78,11 +78,14 @@
   users.users."linux" = {
     isNormalUser = true;
     description = "3d_printer";
-    extraGroups = [ "networkmanager" "wheel" ];
+    extraGroups = [ "networkmanager" "wheel" "docker" ];
     packages = with pkgs; [
     #  thunderbird
     ];
   };
+
+  # Enable Docker.
+  virtualisation.docker.enable = true;
 
   # Install firefox.
   programs.firefox.enable = true;
