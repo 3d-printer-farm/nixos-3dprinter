@@ -2,7 +2,7 @@
 # your system. Help is available in the configuration.nix(5) man page, on
 # https://search.nixos.org/options and in the NixOS manual (`nixos-help`).
 
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   imports =
@@ -87,6 +87,84 @@
   # Enable Docker.
   virtualisation.docker.enable = true;
 
+  # OctoPrint x8, one Docker container per printer.
+  # Printer serial devices aren't known yet - once a printer is plugged in,
+  # add e.g. `extraOptions = [ "--device=/dev/ttyUSB0" ];` to its container.
+  virtualisation.oci-containers.backend = "docker";
+  virtualisation.oci-containers.containers = lib.listToAttrs (map
+    (n: {
+      name = "octoprint-${toString n}";
+      value = {
+        image = "octoprint/octoprint:latest";
+        autoStart = true;
+        ports = [ "${toString (5000 + n)}:80" ];
+        volumes = [ "/var/lib/octoprint/octoprint-${toString n}:/octoprint" ];
+      };
+    })
+    (lib.range 1 8));
+
+  # MongoDB for OctoFarm.
+  services.mongodb.enable = true;
+
+  # OctoFarm, run natively (no Docker) as a systemd service.
+  users.groups.octofarm = { };
+  users.users.octofarm = {
+    isSystemUser = true;
+    group = "octofarm";
+    home = "/var/lib/octofarm";
+    createHome = true;
+  };
+
+  systemd.services.octofarm-setup = {
+    description = "Clone and build OctoFarm";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    path = [ pkgs.git pkgs.nodejs ];
+    environment = {
+      HOME = "/var/lib/octofarm";
+      NPM_CONFIG_CACHE = "/var/lib/octofarm/.npm";
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      User = "octofarm";
+      Group = "octofarm";
+      WorkingDirectory = "/var/lib/octofarm";
+    };
+    script = ''
+      set -e
+      if [ ! -d /var/lib/octofarm/app/.git ]; then
+        git clone https://github.com/kimseungsu-zzz/OctoFarm.git /var/lib/octofarm/app
+      else
+        git -C /var/lib/octofarm/app pull
+      fi
+      cd /var/lib/octofarm/app
+      npm run install-server
+      npm run install-client
+      npm run build-client
+      printf 'NODE_ENV=production\nMONGO=mongodb://127.0.0.1:27017/octofarm\nOCTOFARM_PORT=4000\n' > .env
+    '';
+  };
+
+  systemd.services.octofarm = {
+    description = "OctoFarm server";
+    after = [ "octofarm-setup.service" "mongodb.service" "network-online.target" ];
+    requires = [ "octofarm-setup.service" "mongodb.service" ];
+    wantedBy = [ "multi-user.target" ];
+    path = [ pkgs.nodejs ];
+    environment = {
+      HOME = "/var/lib/octofarm";
+      NODE_ENV = "production";
+    };
+    serviceConfig = {
+      Type = "simple";
+      User = "octofarm";
+      Group = "octofarm";
+      WorkingDirectory = "/var/lib/octofarm/app/server";
+      ExecStart = "${pkgs.nodejs}/bin/node app.js";
+      Restart = "on-failure";
+    };
+  };
+
   # Install firefox.
   programs.firefox.enable = true;
 
@@ -104,6 +182,7 @@
       git
       gh
       claude-code
+      nodejs
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
@@ -120,7 +199,8 @@
   # services.openssh.enable = true;
 
   # Open ports in the firewall.
-  # networking.firewall.allowedTCPPorts = [ ... ];
+  # OctoFarm (4000) and the 8 OctoPrint instances (5001-5008).
+  networking.firewall.allowedTCPPorts = [ 4000 ] ++ (lib.range 5001 5008);
   # networking.firewall.allowedUDPPorts = [ ... ];
   # Or disable the firewall altogether.
   # networking.firewall.enable = false;
