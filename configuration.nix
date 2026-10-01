@@ -173,7 +173,10 @@
     description = "Clone and build OctoFarm";
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
-    path = [ pkgs.git pkgs.nodejs ];
+    # npm's run-script spawns the bare command "sh" to interpret compound
+    # package.json scripts (e.g. "cd server && npm ci"); without a shell on
+    # PATH that lookup fails with ENOENT even though /bin/sh exists.
+    path = [ pkgs.git pkgs.nodejs pkgs.bash ];
     environment = {
       HOME = "/var/lib/octofarm";
       NPM_CONFIG_CACHE = "/var/lib/octofarm/.npm";
