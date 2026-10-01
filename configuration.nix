@@ -128,6 +128,16 @@
       fi
       [ -d venv ] || python -m venv venv
       venv/bin/pip install --upgrade pip setuptools wheel
+      # PyYAML 5.4.1 (pinned by the OctoPrint fork) declares an unconstrained
+      # `Cython` build dependency in its pyproject.toml. Its setup.py calls
+      # build_ext.cython_sources(), which Cython 3.0 removed
+      # (https://github.com/yaml/pyyaml/issues/601), so pip's isolated build
+      # env grabs a too-new Cython and breaks (PIP_CONSTRAINT does not reach
+      # this nested build-isolation install). Pre-install an old Cython into
+      # the venv and build PyYAML with build isolation disabled so its
+      # setup.py picks up our Cython instead of fetching a fresh 3.x one.
+      venv/bin/pip install 'Cython<3'
+      venv/bin/pip install --no-build-isolation 'PyYAML<6,>=5.4.1'
       venv/bin/pip install -e src
     '';
   };
