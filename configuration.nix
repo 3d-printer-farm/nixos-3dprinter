@@ -87,26 +87,69 @@
   # Enable Docker.
   virtualisation.docker.enable = true;
 
-  # OctoPrint x8, one Docker container per printer.
+  # OctoPrint x8, run natively from the 3d-printer-farm fork (source only, no
+  # Docker image). The fork is OctoPrint 1.7.3, whose dependency pins
+  # (Flask<2, tornado<7, PyYAML<6, wrapt<1.13, ...) only build on an older
+  # Python, hence python310 and a gcc for the C extensions.
+  # Each instance has its own basedir (/var/lib/octoprint/N) and port (500N).
   # Printer serial devices aren't known yet - once a printer is plugged in,
-  # add e.g. `extraOptions = [ "--device=/dev/ttyUSB0" ];` to its container.
-  virtualisation.oci-containers.backend = "docker";
-  virtualisation.oci-containers.containers = lib.listToAttrs (map
-    (n: {
-      name = "octoprint-${toString n}";
-      value = {
-        image = "octoprint/octoprint:latest";
-        autoStart = true;
-        ports = [ "${toString (5000 + n)}:80" ];
-        volumes = [ "/var/lib/octoprint/octoprint-${toString n}:/octoprint" ];
-      };
-    })
-    (lib.range 1 8));
+  # point the instance at it in OctoPrint's serial settings (the user is in
+  # the dialout group). Prefer /dev/serial/by-id/* over /dev/ttyUSBn.
+  users.groups.octoprint = { };
+  users.users.octoprint = {
+    isSystemUser = true;
+    group = "octoprint";
+    extraGroups = [ "dialout" ];
+    home = "/var/lib/octoprint";
+    createHome = true;
+  };
 
-  # MongoDB for OctoFarm.
-  services.mongodb.enable = true;
+  systemd.services.octoprint-setup = {
+    description = "Clone and install OctoPrint";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    path = [ pkgs.git pkgs.python310 pkgs.gcc pkgs.gnumake ];
+    environment.HOME = "/var/lib/octoprint";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      User = "octoprint";
+      Group = "octoprint";
+      WorkingDirectory = "/var/lib/octoprint";
+    };
+    script = ''
+      set -e
+      if [ ! -d src/.git ]; then
+        git clone --branch main https://github.com/3d-printer-farm/OctoPrint.git src
+      else
+        git -C src pull
+      fi
+      [ -d venv ] || python -m venv venv
+      venv/bin/pip install --upgrade pip setuptools wheel
+      venv/bin/pip install -e src
+    '';
+  };
+
+  # Template unit: octoprint@N serves instance N on port 500N.
+  systemd.services."octoprint@" = {
+    description = "OctoPrint instance %i";
+    after = [ "octoprint-setup.service" ];
+    requires = [ "octoprint-setup.service" ];
+    environment.HOME = "/var/lib/octoprint";
+    serviceConfig = {
+      User = "octoprint";
+      Group = "octoprint";
+      ExecStart = "/var/lib/octoprint/venv/bin/octoprint serve --host 0.0.0.0 --port 500%i --basedir /var/lib/octoprint/%i";
+      Restart = "on-failure";
+    };
+  };
+  systemd.targets.multi-user.wants =
+    map (n: "octoprint@${toString n}.service") (lib.range 1 8);
 
   # OctoFarm, run natively (no Docker) as a systemd service.
+  # The 3d-printer-farm fork replaced MongoDB with node:sqlite, so no database
+  # server is needed; it only requires Node >= 22.5.
   users.groups.octofarm = { };
   users.users.octofarm = {
     isSystemUser = true;
@@ -123,6 +166,8 @@
     environment = {
       HOME = "/var/lib/octofarm";
       NPM_CONFIG_CACHE = "/var/lib/octofarm/.npm";
+      # sharp's prebuilt libvips needs libstdc++ on NixOS.
+      LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib ];
     };
     serviceConfig = {
       Type = "oneshot";
@@ -133,7 +178,7 @@
     script = ''
       set -e
       if [ ! -d /var/lib/octofarm/app/.git ]; then
-        git clone https://github.com/kimseungsu-zzz/OctoFarm.git /var/lib/octofarm/app
+        git clone https://github.com/3d-printer-farm/OctoFarm.git /var/lib/octofarm/app
       else
         git -C /var/lib/octofarm/app pull
       fi
@@ -141,19 +186,23 @@
       npm run install-server
       npm run install-client
       npm run build-client
-      printf 'NODE_ENV=production\nMONGO=mongodb://127.0.0.1:27017/octofarm\nOCTOFARM_PORT=4000\n' > .env
+      printf 'NODE_ENV=production\nOCTOFARM_PORT=4000\nOCTOFARM_SQLITE_PATH=/var/lib/octofarm/octofarm.db\n' > .env
     '';
   };
 
   systemd.services.octofarm = {
     description = "OctoFarm server";
-    after = [ "octofarm-setup.service" "mongodb.service" "network-online.target" ];
-    requires = [ "octofarm-setup.service" "mongodb.service" ];
+    after = [ "octofarm-setup.service" "network-online.target" ];
+    requires = [ "octofarm-setup.service" ];
     wantedBy = [ "multi-user.target" ];
-    path = [ pkgs.nodejs ];
+    path = [ pkgs.nodejs pkgs.git ];
     environment = {
       HOME = "/var/lib/octofarm";
       NODE_ENV = "production";
+      OCTOFARM_PORT = "4000";
+      OCTOFARM_SQLITE_PATH = "/var/lib/octofarm/octofarm.db";
+      # sharp's prebuilt libvips needs libstdc++ on NixOS.
+      LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib ];
     };
     serviceConfig = {
       Type = "simple";
