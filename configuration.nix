@@ -4,6 +4,93 @@
 
 { config, pkgs, lib, ... }:
 
+let
+  # All 8 OctoPrint printers are Ender 3's with the stock CH340 USB-serial
+  # chip (1a86:7523). Clone CH340s all report the same hardcoded serial
+  # number, so /dev/serial/by-id/* collapses all 8 into a single colliding
+  # symlink - it's unusable here. /dev/serial/by-path/* instead encodes
+  # physical USB port location, which is stable across reboots as long as
+  # each printer stays plugged into the same port, so that's what's used
+  # below to give octoprint@N a fixed, distinct serial device.
+  octoprintSerialPorts = [
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.1:1.0-port0"
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.2:1.0-port0"
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.3:1.0-port0"
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.4:1.0-port0"
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.1:1.0-port0"
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.2:1.0-port0"
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.3:1.0-port0"
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.4.3:1.0-port0"
+  ];
+
+  # Writes each instance's config.yaml (serial port + autoconnect) and
+  # default Ender 3 printer profile on first start, keyed off the %i
+  # instance number passed as $1. Only writes files that don't already
+  # exist, so settings changed later via the OctoPrint UI aren't clobbered
+  # on every service restart.
+  octoprintConfigureScript = pkgs.writeShellScript "octoprint-configure" (''
+set -e
+instance="$1"
+case "$instance" in
+'' + lib.concatStrings (lib.imap1 (i: port: ''
+${toString i}) port="${port}" ;;
+'') octoprintSerialPorts) + ''
+*) echo "octoprint-configure: no serial port mapped for instance $instance" >&2; exit 1 ;;
+esac
+
+basedir="/var/lib/octoprint/$instance"
+mkdir -p "$basedir/printerProfiles"
+
+if [ ! -f "$basedir/config.yaml" ]; then
+cat > "$basedir/config.yaml" <<EOF
+serial:
+  port: $port
+  baudrate: 115200
+  autoconnect: true
+printerProfiles:
+  default: _default
+EOF
+fi
+
+if [ ! -f "$basedir/printerProfiles/_default.profile" ]; then
+cat > "$basedir/printerProfiles/_default.profile" <<'EOF'
+id: _default
+name: Ender 3
+model: Creality Ender 3
+color: default
+volume:
+  width: 220
+  depth: 220
+  height: 250
+  formFactor: rectangular
+  origin: lowerleft
+  custom_box: false
+heatedBed: true
+heatedChamber: false
+extruder:
+  count: 1
+  offsets:
+  - - 0
+    - 0
+  nozzleDiameter: 0.4
+  sharedNozzle: false
+axes:
+  x:
+    speed: 6000
+    inverted: false
+  y:
+    speed: 6000
+    inverted: false
+  z:
+    speed: 200
+    inverted: false
+  e:
+    speed: 300
+    inverted: false
+EOF
+fi
+'');
+in
 {
   imports =
     [ # Include the results of the hardware scan.
@@ -93,9 +180,9 @@
   # Python: nixos-26.05 no longer ships python310, so pkgs.python310 comes from
   # the custom overlay in overlays/python310.nix (wired up in flake.nix).
   # Each instance has its own basedir (/var/lib/octoprint/N) and port (500N).
-  # Printer serial devices aren't known yet - once a printer is plugged in,
-  # point the instance at it in OctoPrint's serial settings (the user is in
-  # the dialout group). Prefer /dev/serial/by-id/* over /dev/ttyUSBn.
+  # All 8 printers are Ender 3's; octoprintSerialPorts/octoprintConfigureScript
+  # above (see the "let" block) assign each instance its own stable
+  # /dev/serial/by-path device and seed it with an Ender 3 printer profile.
   users.groups.octoprint = { };
   users.users.octoprint = {
     isSystemUser = true;
@@ -159,6 +246,7 @@
     serviceConfig = {
       User = "octoprint";
       Group = "octoprint";
+      ExecStartPre = "${octoprintConfigureScript} %i";
       ExecStart = "/var/lib/octoprint/venv/bin/octoprint serve --host 0.0.0.0 --port 500%i --basedir /var/lib/octoprint/%i";
       Restart = "on-failure";
     };
