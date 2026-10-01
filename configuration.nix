@@ -87,6 +87,57 @@
   # Enable Docker.
   virtualisation.docker.enable = true;
 
+  # OctoPrint x8 (all Ender 3), one instance per printer, from pkgs.octoprint.
+  # The CH340 clones share one serial number, so /dev/serial/by-id collides;
+  # by-path encodes the physical USB port and stays stable as long as each
+  # printer stays plugged into the same port.
+  services.octoprint-multi = {
+    enable = true;
+    openFirewall = true;
+    instances = {
+      printer1 = {
+        port = 5001;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.1:1.0-port0";
+        accessControl = false;
+      };
+      printer2 = {
+        port = 5002;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.2:1.0-port0";
+        accessControl = false;
+      };
+      printer3 = {
+        port = 5003;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.3:1.0-port0";
+        accessControl = false;
+      };
+      printer4 = {
+        port = 5004;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.4:1.0-port0";
+        accessControl = false;
+      };
+      printer5 = {
+        port = 5005;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.1:1.0-port0";
+        accessControl = false;
+      };
+      printer6 = {
+        port = 5006;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.2:1.0-port0";
+        accessControl = false;
+      };
+      printer7 = {
+        port = 5007;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.3:1.0-port0";
+        accessControl = false;
+      };
+      printer8 = {
+        port = 5008;
+        serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:10.4.3:1.0-port0";
+        accessControl = false;
+      };
+    };
+  };
+
   # Install firefox.
   programs.firefox.enable = true;
 

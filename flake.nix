@@ -7,10 +7,15 @@
   };
 
   outputs = { self, nixpkgs, ... }: {
+    nixosModules.octoprint-multi = ./nixosModules/octoprint-multi.nix;
+
     # hostname is "nixos", so `nixos-rebuild switch --flake .` picks this up.
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
-      modules = [ ./configuration.nix ];
+      modules = [
+        self.nixosModules.octoprint-multi
+        ./configuration.nix
+      ];
     };
   };
 }
