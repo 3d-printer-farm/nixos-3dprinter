@@ -127,7 +127,11 @@
         git -C src pull
       fi
       [ -d venv ] || python -m venv venv
-      venv/bin/pip install --upgrade pip setuptools wheel
+      # setuptools>=82 removed pkg_resources entirely
+      # (https://github.com/pypa/setuptools/blob/main/NEWS.rst), which this
+      # old OctoPrint fork still imports at startup ("Could not initialize
+      # event manager: No module named 'pkg_resources'"). Pin below that.
+      venv/bin/pip install --upgrade pip 'setuptools<82' wheel
       # PyYAML 5.4.1 (pinned by the OctoPrint fork) declares an unconstrained
       # `Cython` build dependency in its pyproject.toml. Its setup.py calls
       # build_ext.cython_sources(), which Cython 3.0 removed
@@ -148,6 +152,10 @@
     after = [ "octoprint-setup.service" ];
     requires = [ "octoprint-setup.service" ];
     environment.HOME = "/var/lib/octoprint";
+    # Needs git on PATH: OctoPrint's versioneer-generated _version.py shells
+    # out to `git describe` at import time to resolve its version; without
+    # it, it silently falls back to "0+unknown".
+    path = [ pkgs.git ];
     serviceConfig = {
       User = "octoprint";
       Group = "octoprint";
