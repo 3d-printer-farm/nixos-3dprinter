@@ -90,7 +90,8 @@
   # OctoPrint x8, run natively from the 3d-printer-farm fork (source only, no
   # Docker image). The fork is OctoPrint 1.7.3, whose dependency pins
   # (Flask<2, tornado<7, PyYAML<6, wrapt<1.13, ...) only build on an older
-  # Python, hence python310 and a gcc for the C extensions.
+  # Python: nixos-26.05 no longer ships python310, so pkgs.python310 comes from
+  # the custom overlay in overlays/python310.nix (wired up in flake.nix).
   # Each instance has its own basedir (/var/lib/octoprint/N) and port (500N).
   # Printer serial devices aren't known yet - once a printer is plugged in,
   # point the instance at it in OctoPrint's serial settings (the user is in
