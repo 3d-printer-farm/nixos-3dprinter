@@ -162,6 +162,7 @@
       git
       gh
       claude-code
+      orca-slicer
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
