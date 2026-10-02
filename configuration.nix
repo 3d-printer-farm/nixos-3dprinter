@@ -50,6 +50,13 @@
   services.displayManager.sddm.enable = true;
   services.desktopManager.plasma6.enable = true;
 
+  # Dedicated printer-dashboard machine: boot straight into KDE with no
+  # login prompt, then kiosk-launch the FDM Monster printer grid.
+  services.displayManager.autoLogin = {
+    enable = true;
+    user = "linux";
+  };
+
   # Configure keymap in X11
   services.xserver.xkb = {
     layout = "us";
@@ -147,6 +154,26 @@
 
   # Install firefox.
   programs.firefox.enable = true;
+
+  # Kiosk-launch the FDM Monster printer grid once the KDE session (and the
+  # fdm-monster service) is up.
+  systemd.user.services.printer-grid-kiosk = {
+    description = "Open FDM Monster printer grid in kiosk mode";
+    wantedBy = [ "graphical-session.target" ];
+    partOf = [ "graphical-session.target" ];
+    after = [ "graphical-session.target" ];
+    serviceConfig = {
+      ExecStart = pkgs.writeShellScript "printer-grid-kiosk" ''
+        set -eu
+        for _ in $(seq 1 60); do
+          ${pkgs.curl}/bin/curl -fs http://localhost:4000/ >/dev/null 2>&1 && break
+          sleep 2
+        done
+        exec ${pkgs.firefox}/bin/firefox --kiosk http://localhost:4000/printer-grid
+      '';
+      Restart = "no";
+    };
+  };
 
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
