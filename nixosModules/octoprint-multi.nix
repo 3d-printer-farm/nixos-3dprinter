@@ -115,6 +115,14 @@ let
       install -m 0640 ${profileFile name i} "$base/printerProfiles/_default.profile"
     ${cfg.package}/bin/octoprint --basedir "$base" config set --bool \
       accessControl.enabled ${lib.boolToString i.accessControl}
+
+    # Stable API key kept in $base/api.key (root and the service user only) so
+    # other services, e.g. FDM Monster, can talk to the instance. 32 hex chars
+    # satisfies FDM Monster's 32-43 char key check.
+    if [ ! -s "$base/api.key" ]; then
+      (umask 077; head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$base/api.key")
+    fi
+    ${cfg.package}/bin/octoprint --basedir "$base" config set api.key "$(cat "$base/api.key")"
   '';
 in
 {

@@ -138,6 +138,13 @@
     };
   };
 
+  # FDM Monster (port 4000) with all eight OctoPrint instances pre-registered.
+  services.fdm-monster = {
+    enable = true;
+    openFirewall = true;
+    registerOctoprintMulti = true;
+  };
+
   # Install firefox.
   programs.firefox.enable = true;
 
