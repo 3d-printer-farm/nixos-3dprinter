@@ -10,7 +10,6 @@
 , fetchurl
 , nodejs_22
 , yarn-berry
-, node-gyp
 , python3
 , pkg-config
 , makeWrapper
@@ -20,6 +19,15 @@
 let
   nodejs = nodejs_22;
   yarn = yarn-berry.override { inherit nodejs; };
+
+  # yarn-berry's own fetcher/config-hook scope resolves `nodejs` independently
+  # of the `yarn-berry.override` above (it's a separate callPackage splice), so
+  # it defaults to the top-level nodejs (currently 24.x) instead of nodejs_22.
+  # yarnBerryConfigHook uses that nodejs to pick node-gyp and node headers when
+  # `yarn build` auto-rebuilds native deps (e.g. better-sqlite3); left
+  # unpinned, the resulting .node file is built against the wrong V8 and fails
+  # to dlopen ("undefined symbol") under the nodejs_22 runtime used below.
+  yarnBerryConfigHook = yarn.yarnBerryConfigHook.override { inherit nodejs; };
 
   version = "2.1.1";
   clientVersion = "2.4.2"; # must match "@fdm-monster/client-next" / defaultClientMinimum
@@ -52,8 +60,7 @@ stdenv.mkDerivation (finalAttrs: {
   nativeBuildInputs = [
     nodejs
     yarn
-    yarn.yarnBerryConfigHook
-    node-gyp
+    yarnBerryConfigHook
     python3
     pkg-config
     makeWrapper
@@ -63,10 +70,9 @@ stdenv.mkDerivation (finalAttrs: {
   buildPhase = ''
     runHook preBuild
 
-    # Install scripts are disabled (.yarnrc.yml), so compile the one native
-    # module (better-sqlite3) by hand against the Nix node headers.
-    (cd node_modules/better-sqlite3 && node-gyp rebuild --release --nodedir=${nodejs})
-
+    # yarnBerryConfigHook's `yarn install` (run before this phase) already
+    # compiled better-sqlite3's native module against nodejs_22, now that
+    # yarnBerryConfigHook is pinned to it above.
     yarn build
 
     runHook postBuild
