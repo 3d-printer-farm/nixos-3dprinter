@@ -38,10 +38,15 @@ stdenv.mkDerivation (finalAttrs: {
     hash = "sha256-3VQE6SQCCSuU2JLWXmDHeX6sQnp3NP42bWBIPA+2wsA=";
   };
 
+  # yarn.lock omits hashes for optional/platform-specific deps (e.g. esbuild,
+  # lightningcss, oxlint native binaries); this file fills them in. Regenerate
+  # with `yarn-berry-fetcher missing-hashes yarn.lock` after bumping version.
+  missingHashes = ./missing-hashes.json;
+
   # Fill in on first build: `nix build .#fdm-monster` prints the real hash.
   offlineCache = yarn.fetchYarnBerryDeps {
-    inherit (finalAttrs) src;
-    hash = lib.fakeHash;
+    inherit (finalAttrs) src missingHashes;
+    hash = "sha256-mJiwwxVbNgh0d5ORs9Obog2JUFDI77oyTQbV4FcA+/Y=";
   };
 
   nativeBuildInputs = [
@@ -73,6 +78,11 @@ stdenv.mkDerivation (finalAttrs: {
     app=$out/lib/fdm-monster
     mkdir -p $app $out/bin $out/share/fdm-monster/client-dist
     cp -r dist node_modules package.json $app/
+
+    # Workspace symlink to a dev-only package (mock servers, diagnostics) not
+    # used by the server's own build output; drop it instead of shipping
+    # packages/consoles just to satisfy the link.
+    rm -f $app/node_modules/@fdm-monster/consoles
 
     unzip -q ${clientDist} -d $out/share/fdm-monster/client-dist
 
