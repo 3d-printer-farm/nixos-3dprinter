@@ -2,7 +2,7 @@
 # your system. Help is available in the configuration.nix(5) man page, on
 # https://search.nixos.org/options and in the NixOS manual (`nixos-help`).
 
-{ config, pkgs, lib, ... }:
+{ config, pkgs, ... }:
 
 {
   imports =
@@ -85,7 +85,7 @@
   users.users."linux" = {
     isNormalUser = true;
     description = "3d_printer";
-    extraGroups = [ "networkmanager" "wheel" "docker" "input" ];
+    extraGroups = [ "networkmanager" "wheel" "docker" ];
     packages = with pkgs; [
     #  thunderbird
     ];
@@ -106,13 +106,6 @@
         port = 5001;
         serialPort = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:9.1:1.0-port0";
         accessControl = false;
-        # Served by services.mjpg-streamer below.
-        extraSettings = {
-          webcam = {
-            stream = "http://127.0.0.1:8080/?action=stream";
-            snapshot = "http://127.0.0.1:8080/?action=snapshot";
-          };
-        };
       };
       printer2 = {
         port = 5002;
@@ -151,32 +144,6 @@
       };
     };
   };
-
-  # MJPEG webcam stream for printer1's Logitech C920 (stable by-id path so it
-  # survives being replugged into a different USB port). Consumed locally by
-  # OctoPrint's embedded webcam view and the FDM Monster printer grid, both of
-  # which run on this same machine, hence the 127.0.0.1 URLs above.
-  # Resolution kept at 640x480: 1280x720 reliably fails UVC stream start on
-  # this C920 with "Protocol error" (USB bandwidth/first-enable negotiation).
-  services.mjpg-streamer = {
-    enable = true;
-    inputPlugin = "input_uvc.so -d /dev/v4l/by-id/usb-046d_HD_Pro_Webcam_C920_85CC92EF-video-index0 -r 640x480 -f 15";
-    outputPlugin = "output_http.so -w @www@ -p 8080";
-  };
-  # The by-id symlink isn't always ready the instant the service starts at
-  # boot, and a failed capture init doesn't always make mjpg_streamer exit
-  # (it can keep serving empty 400s forever) so plain Restart=on-failure
-  # doesn't reliably recover it. Wait for udev, and restart unconditionally
-  # on a fixed interval as a backstop.
-  systemd.services.mjpg-streamer = {
-    after = [ "systemd-udev-settle.service" ];
-    wants = [ "systemd-udev-settle.service" ];
-    serviceConfig = {
-      Restart = lib.mkForce "always";
-      RestartSec = lib.mkForce 3;
-    };
-  };
-  networking.firewall.allowedTCPPorts = [ 8080 ];
 
   # FDM Monster (port 4000) with all eight OctoPrint instances pre-registered.
   services.fdm-monster = {
