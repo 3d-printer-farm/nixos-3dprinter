@@ -2,7 +2,7 @@
 # your system. Help is available in the configuration.nix(5) man page, on
 # https://search.nixos.org/options and in the NixOS manual (`nixos-help`).
 
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   imports =
@@ -156,10 +156,25 @@
   # survives being replugged into a different USB port). Consumed locally by
   # OctoPrint's embedded webcam view and the FDM Monster printer grid, both of
   # which run on this same machine, hence the 127.0.0.1 URLs above.
+  # Resolution kept at 640x480: 1280x720 reliably fails UVC stream start on
+  # this C920 with "Protocol error" (USB bandwidth/first-enable negotiation).
   services.mjpg-streamer = {
     enable = true;
-    inputPlugin = "input_uvc.so -d /dev/v4l/by-id/usb-046d_HD_Pro_Webcam_C920_85CC92EF-video-index0 -r 1280x720 -f 15";
+    inputPlugin = "input_uvc.so -d /dev/v4l/by-id/usb-046d_HD_Pro_Webcam_C920_85CC92EF-video-index0 -r 640x480 -f 15";
     outputPlugin = "output_http.so -w @www@ -p 8080";
+  };
+  # The by-id symlink isn't always ready the instant the service starts at
+  # boot, and a failed capture init doesn't always make mjpg_streamer exit
+  # (it can keep serving empty 400s forever) so plain Restart=on-failure
+  # doesn't reliably recover it. Wait for udev, and restart unconditionally
+  # on a fixed interval as a backstop.
+  systemd.services.mjpg-streamer = {
+    after = [ "systemd-udev-settle.service" ];
+    wants = [ "systemd-udev-settle.service" ];
+    serviceConfig = {
+      Restart = lib.mkForce "always";
+      RestartSec = lib.mkForce 3;
+    };
   };
   networking.firewall.allowedTCPPorts = [ 8080 ];
 
